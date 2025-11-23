@@ -1,0 +1,290 @@
+[
+  {
+    "id": "427d5b5b-01a1-4d24-ae0c-7193972eb851",
+    "title": "[M-1] Improper Transfer Restrictions on Non-Bridged Tokens Due to Boolean Bridged Token Tracking, Allowing a DoS Attack Vector",
+    "description": " Root Cause\nThe Titn.sol contract incorrectly tracks bridged token holders using a boolean flag (isBridgedTokenHolder). Once an address receives any bridged tokens (via cross-chain bridging), it is permanently marked as a “bridged token holder,” subjecting all tokens held by that address (including non-bridged ones) to transfer restrictions. This flawed design allows malicious actors to disrupt legitimate users by sending them a trivial amount of bridged tokens, thereby locking their entire TITN balance from being transferred freely.",
+    "severity": "medium",
+    "contract_name": "Titn",
+    "project_name": "2025-02-thorwallet",
+    "unique_key": "2025-02-thorwallet-M-1"
+  },
+  {
+    "id": "7296069b-4896-4908-8b24-625841fcbab3",
+    "title": "[M-01] VaultBase is not ERC4626 compliant",
+    "description": "Issue: VaultBase (and MultiStrategyVault) is not ERC4626-compliant: several ERC4626 view helpers return incorrect values and omit paused/limit/fee/rounding logic, letting callers mis-estimate allowed amounts and trigger reverts. End-to-end: maxDeposit(address) and maxMint(address) return type(uint256).max while _depositInternal(uint256 assets, address receiver) enforces per-wallet limits via getMaxDeposit() (local variable maxDepositLocal), computes depositInAssets = (balanceOf(msg.sender) * _ONE) / tokenPerAsset(), calculates newBalance = assets + depositInAssets and reverts MaxDepositReached() if exceeded — so callers see an allowed max that can still revert. maxWithdraw(address shareHolder) and maxRedeem(address) simply return convertToAssets(balanceOf(shareHolder)) and balanceOf(shareHolder) and do not return 0 when withdrawals/redemptions are paused/disabled. previewMint(uint256 shares) calls this.convertToAssets(shares) (Rebase(totalAssets(), totalSupply()).toBase(..., false)) which rounds down and can understate assets required. previewWithdraw(uint256 assets) and previewRedeem(uint256 shares) call convertToShares/convertToAssets but omit withdrawal fee logic from _redeemInternal (fee = amount.mulDivUp(getWithdrawalFee(), PERCENTAGE_PRECISION) and payment to getFeeReceiver()), and they do not apply upward rounding (mulDivUp) or — in MultiStrategyVault — simulate per-strategy undeploy rounding/losses. Impact/Exploit: integrators and UIs relying on these views can prompt users or contracts to submit deposits/mints/withdrawals that later revert (MaxDepositReached or insufficient assets/shares), mis-display available withdrawal capacity, under-/over-estimate fees and returns, and mishandle liquidity planning. Recommended fix: implement ERC4626 semantics exactly — have maxDeposit/maxMint consult getMaxDeposit(), paused flags and per-user limits and return 0 when disabled; have maxWithdraw/maxRedeem return 0 when withdrawals/redemptions are disabled; make previewMint round up; make previewWithdraw/previewRedeem include getWithdrawalFee() and getFeeReceiver(), use mulDivUp/appropriate rounding; and for MultiStrategyVault simulate per-strategy undeploy rounding/losses so previews never exceed actual outcomes.",
+    "severity": "medium",
+    "contract_name": "Vault",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-01"
+  },
+  {
+    "id": "58e209dd-99b2-4ab7-9efa-ebd13365d6aa",
+    "title": "[M-03] MultiStrategy#removeStrategy() cannot remove leverage strategies that still have deployed assets",
+    "description": "A deployed leveraged strategy can become permanently stuck in a MultiStrategyVault because the vault’s remove flow requires the strategy to return invested funds but the vault lacks free liquidity to accept them. End-to-end: governance/operator calls MultiStrategyVault.removeStrategy(strategy) (or similar public remover); the vault attempts to call the strategy’s exit/withdraw method (e.g. Strategy.exit(), Strategy.withdrawAll(), Strategy.redeem() or Strategy.deleverage()) or to transfer the strategy’s share into vault reserves. The vault logic inspects state like MultiStrategyVault.totalAssets, MultiStrategyVault.availableLiquidity (or vaultBalance) and strategy-specific fields such as strategyInfo[strategy].deployedAssets, strategyAllocations, strategies[], and strategyDebt/allocatedAssets; if availableLiquidity < strategyInfo[strategy].deployedAssets the withdraw/redeem call can revert or fail and the strategy remains registered with allocations/debt unchanged. An attacker or adverse condition (locking funds in the external protocol or draining vault liquidity) can trigger this, blocking strategy removal, reallocation, emergency upgrades, or withdrawals. Fixes include supporting forced governance removal, maintaining a reserve to cover removals, or guaranteeing a reliable strategy.exit()/deleverage() path that can unwind positions even when vault liquidity is low.",
+    "severity": "medium",
+    "contract_name": "MultiStrategyVault",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-03"
+  },
+  {
+    "id": "ef2af55f-c936-4b02-b687-91d230ae86b1",
+    "title": "[M-06] Even when the Vault contract is paused, the rebalance function is not paused",
+    "description": "When the Vault (e.g. Vault or StrategyVault) is paused via pause() / _pause() (state vars paused or _paused), user withdrawal functions withdraw() / withdrawAll() / redeem() are blocked but the rebalance/harvest path remains callable. Managers/keepers can still invoke rebalance() / performRebalance() / harvest() / accrueInterest() / _rebalance() on Strategy/Manager contracts. Those calls trigger interest accrual and performance fee computation that update state variables such as performanceFeeRate, feesAccrued / pendingFees / pendingPerformanceFee, totalAssets or totalInterest, and then call collectPerformanceFee() / claimFees() / chargePerformanceFee() to transfer fees to feeRecipient or a FeeCollector. Because the fee-collection path is not gated by paused / _paused / paused() checks, performance fees can be computed and withdrawn while users remain unable to exit, locking user funds and enabling protocol managers to extract fees during an emergency pause (fund-owner extraction risk).",
+    "severity": "medium",
+    "contract_name": "MultiStrategyVault",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-06"
+  },
+  {
+    "id": "5e164b10-a6ab-4954-bcfe-0169c64c6d00",
+    "title": "[M-02] Anyone can DOS handleReallocation over and over",
+    "description": "Li.Fi’s Executor contract is granted SWAP_CALLER_ROLE. The function handleReallocation is used inside the protocol to notify about user’s reallocation and can only be called by address that has SWAP_CALLER_ROLE. The intention of the protocol is to use the executor’s functions so that executor swaps assets and then calls handleReallocation inside NudgeCampaign / NudgePointsCampaign contract.",
+    "severity": "medium",
+    "contract_name": "NudgeCampaignFactory",
+    "project_name": "2025-03-nudgexyz",
+    "unique_key": "2025-03-nudgexyz-M-02"
+  },
+  {
+    "id": "70a00699-6d3e-4742-a439-40d396b118ad",
+    "title": "[M-04] Not verifying that transaction initiator is the actual participator allows malicious user to allocate full reward as Uniswap V2 pool",
+    "description": "To participate in campaign, user has to call swap provider (Li.Fi) Executor::swapAndExecute function. This function performs swap required to get campaign target tokens and calls NudgeCampaign::handleReallocation. NudgeCampaign will receive and forward target tokens to userAddress and update user participation details accordingly. handleReallocation is only callable by SWAP_CALLER_ROLE which is given to Executor to make sure user swaps tokens before being able to participate.",
+    "severity": "medium",
+    "contract_name": "NudgeCampaign",
+    "project_name": "2025-03-nudgexyz",
+    "unique_key": "2025-03-nudgexyz-M-04"
+  },
+  {
+    "id": "0841fdc8-6598-4351-a9dc-c54bd29019fd",
+    "title": "[M-03] All reallocate cross-chain token and rewards will be lost for the users using the account abstraction wallet",
+    "description": "Users with account abstraction wallets have a different address across different chains for same account, so if user using an account abstraction wallet initiate reallocate cross-chain token, the toToken will be sent to wrong address and lost permanently. ",
+    "severity": "medium",
+    "contract_name": "NudgeCampaign",
+    "project_name": "2025-03-nudgexyz",
+    "unique_key": "2025-03-nudgexyz-M-03"
+  },
+  {
+    "id": "6b5fe9d5-0935-4dd0-adc3-ae12e36393e4",
+    "title": "[M-01] Unauthorized reallocation in NudgeCampaign::handleReallocation and reward disruption vulnerability in NudgeCampaign::invalidateParticipations",
+    "description": "The NudgeCampaign::handleReallocation function allows any attacker to manipulate reward allocations through flash loans or repeated calls with real fund via Li.Fi’s executor. This can lead to reward depletion and disruption of legitimate user rewards even after invalidating the attacker",
+    "severity": "medium",
+    "contract_name": "NudgeCampaign",
+    "project_name": "2025-03-nudgexyz",
+    "unique_key": "2025-03-nudgexyz-M-01"
+  },
+  {
+    "id": "45ac40ba-c93d-4be4-aaa7-7df2ad97b476",
+    "title": "[H-1] MergeTgt has no handling if TGTTOEXCHANGE is exceeded during the exchange period",
+    "description": "MergeTgt has hardcoded amounts of TGTTOEXCHANGE and TITNARB. Their ratio is used for rate calculation and TITNARB amount of TITN is deposited to be claimed.",
+    "severity": "high",
+    "contract_name": "MergeTgt",
+    "project_name": "2025-02-thorwallet",
+    "unique_key": "2025-02-thorwallet-H-1"
+  },
+  {
+    "id": "adfa3795-2856-453b-84dc-de9d0beb3f50",
+    "title": "[M-02] Operators are unable to perform any actions due to incorrect modifier implementation",
+    "description": "The onlyOperator modifier in LiquidRon contract is intended to restrict access to specific functions to either the owner or operator. Functions like harvest, delegateAmount, and harvestAndDelegateRewards rely on this modifier for access control.  ",
+    "severity": "medium",
+    "contract_name": "LiquidRon",
+    "project_name": "2025-01-liquid-ron",
+    "unique_key": "2025-01-liquid-ron-M-02"
+  },
+  {
+    "id": "48a04e71-1cf1-4fd2-9182-f678ef254a8b",
+    "title": "[M-01] User can earn rewards by frontrunning the new rewards accumulation in Ron staking without actually delegating his tokens",
+    "description": "The Ron staking contract let us earn rewards by delegating our tokens to a validator. But you will only earn rewards on the lowest balance of the day (source). So if you delegate your tokens on the first day, you are going to earn 0 rewards for that day as your lowest balance was 0 on that day. This will happens with every new delegator.",
+    "severity": "medium",
+    "contract_name": "LiquidRon",
+    "project_name": "2025-01-liquid-ron",
+    "unique_key": "2025-01-liquid-ron-M-01"
+  },
+  {
+    "id": "0cf703df-f080-43a7-b346-48a213b08822",
+    "title": "[H-01] The calculation of totalAssets() could be wrong if operatorFeeAmount > 0, this can cause potential loss for the new depositors",
+    "description": "The fee accumulated by operator is stored in operatorFeeAmount. The amount is directly recorded based on the number of actual assets accumulated, not the portion of shares. The problem is, this fee is stored in the vault contract as WRON token balance together with the assets deposited by the users.",
+    "severity": "high",
+    "contract_name": "LiquidRon",
+    "project_name": "2025-01-liquid-ron",
+    "unique_key": "2025-01-liquid-ron-H-01"
+  },
+  {
+    "id": "3fe803f2-03d7-48e4-b1ba-a20aed2dd57d",
+    "title": "[H-2] The user can send tokens to any address by using two bridge transfers, even when transfers are restricted.",
+    "description": "When isBridgedTokensTransferLocked is set to true, regular users’ transfer and transferFrom operations will be restricted. Regular users should not send their tokens to any address other than the transferAllowedContract and lzEndpoint. However, since bridge operations are not subject to this restriction, users can send tokens to any address by performing two bridge transfers.\nThis breaks the primary invariant: Unless enabled (or the user is the admin), users who merge their TGT to TITN should not be able to transfer them to any address other than the LayerZero endpoint or a specified contract address (transferAllowedContract).",
+    "severity": "high",
+    "contract_name": "Titn",
+    "project_name": "2025-02-thorwallet",
+    "unique_key": "2025-02-thorwallet-H-2"
+  },
+  {
+    "id": "a6581554-f80f-4798-8e3d-c1f70b60ba2f",
+    "title": "[M-04] Sending tokens to a Strategy when totalSupply is 0 can permanently make the Vault unavailable",
+    "description": "A hostile actor can permanently disable a Vault by sending ERC20 tokens directly to its Strategy so that Strategy/Vault.totalAssets() > 0 while Vault.totalSupply == 0. The Vault’s deposit/mint share conversion (e.g. convertToShares() / previewDeposit()) computes shares using a proportional formula like shares = assets * totalSupply / totalAssets; with totalSupply == 0 this yields zero shares (or triggers an invalid/division case depending on implementation), causing deposit()/mint() to revert or to mint 0 shares. End-to-end: attacker calls ERC20.transfer(strategyAddress, amount) → subsequent Vault.deposit(...) / Vault.mint(...) call reads totalAssets() and totalSupply → convertToShares()/previewDeposit() compute shares = assets * totalSupply / totalAssets → computed shares == 0 or invalid → deposit/mint fails and totalSupply remains 0, leaving the Vault unusable. The same failure can occur during normal operation if small leftover tokens sit in Strategy so totalAssets() > 0 while totalSupply is effectively zero for new deposits.",
+    "severity": "medium",
+    "contract_name": "Vault",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-04"
+  },
+  {
+    "id": "e1c858f3-ee39-4496-be3e-bda0428d7fe7",
+    "title": "[M-11] The calculation of assetsMax is incorrect.",
+    "description": "The _undeploy function computes a withdrawal cap (assetsMax) using _morpho.totalSupplyAssets and _morpho.totalSupplyShares read directly from the _morpho contract storage instead of using up-to-date totals that include accrued interest. Because interest in the underlying protocol accrues off-chain/storage between updates, the stored totalSupplyAssets/totalSupplyShares can be stale; using them causes assetsMax to be underestimated relative to the true post‑interest state. An attacker can call _undeploy (or any withdrawal flow that uses the same logic) at a timing/state mismatch to trigger transfers larger than the contract’s correct entitlement, withdrawing excess underlying and draining value from other users. Key identifiers: function _undeploy, variable assetsMax, contract instance _morpho, and state variables totalSupplyAssets and totalSupplyShares.",
+    "severity": "medium",
+    "contract_name": "StrategySupplyMorpho",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-11"
+  },
+  {
+    "id": "fecc19a6-58b8-47cc-a986-c86c6bd5d09b",
+    "title": "[M-16] StrategySupplyBase.undeploy does not return the amount of assets actually undeployed, which can cause a withdrawal to fail",
+    "description": "In StrategySupplyBase.undeploy the function uses the caller-supplied requestedAmount instead of the actual withdrawnAmount returned by the underlying strategy. End-to-end: a user calls StrategySupplyBase.undeploy(requestedAmount); the contract asks the strategy to withdraw funds but the strategy returns withdrawnAmount < requestedAmount (and the contract only receives withdrawnAmount). The function then attempts to return or transfer requestedAmount (e.g., asset.transfer(msg.sender, requestedAmount)) or otherwise signals that requestedAmount was returned; because the contract only holds withdrawnAmount this causes the transfer to revert or fail, preventing the user from receiving funds. Root cause: using requestedAmount rather than the actual withdrawnAmount when completing the undeploy/withdraw flow, leading to reverts/failed undeploys and potential denial-of-service for withdrawals.",
+    "severity": "medium",
+    "contract_name": "StrategySupplyBase",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-16"
+  },
+  {
+    "id": "69892d16-25e3-4e4a-b3cd-b24c7e86df2d",
+    "title": "[M-05] Permit doesn’t work with DAI",
+    "description": "VaultRouter.pullTokensWithPermit blindly calls token.permit(msg.sender, address(this), amount, deadline, v, r, s) assuming the EIP‑2612 ABI. DAI, however, implements a different non‑standard permit: permit(address holder, address spender, uint256 nonce, uint256 expiry, bool allowed, uint8 v, bytes32 r, bytes32 s). Because the function selector, parameter order and semantics differ (EIP‑2612 expects amount+deadline; DAI expects nonce+expiry+allowed), invoking the EIP‑2612 signature against a DAI contract will either revert or not grant the intended allowance (the boolean 'allowed' and nonce/expiry are not handled). End‑to‑end: VaultRouter.pullTokensWithPermit -> token.permit(msg.sender, address(this), amount, deadline, v, r, s) (expects EIP‑2612) vs DAI.permit(holder, spender, nonce, expiry, allowed, v, r, s) -> approval not granted or call reverts -> VaultRouter.pullTokens (transferFrom) cannot pull tokens. Impact: users cannot use the permit convenience with DAI (UX break / DoS of permit flow) and calls may revert or silently fail. Mitigation: detect and support DAI's permit selector/signature or attempt both ABIs and/or fall back to on‑chain approve/transferFrom when permit fails.",
+    "severity": "medium",
+    "contract_name": "VaultRouter",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-05"
+  },
+  {
+    "id": "7bb7d482-c183-4db8-b7c6-db5d361a3a28",
+    "title": "[M-09] Non-whitelisted recipient can receive shares",
+    "description": "VaultBase enforces access via an onlyWhiteListed modifier that checks the _enabledAccounts whitelist, but its deposit(...) and mint(...) functions do NOT validate the receiver parameter. A whitelisted caller (e.g. the whitelisted VaultRouter contract) can call VaultBase.deposit or VaultBase.mint and pass a non‑whitelisted address as the receiver, causing vault shares to be minted/transferred to that recipient despite the recipient not being in _enabledAccounts. Because VaultRouter is whitelisted and can invoke VaultBase.withdraw and VaultBase.redeem on behalf of holders, the non‑whitelisted recipient can then use VaultRouter to call VaultBase.withdraw/redeem and redeem/withdraw the underlying assets. End‑to‑end: onlyWhiteListed + _enabledAccounts restrict callers, but unvalidated receiver in deposit/mint plus VaultRouter's whitelist rights enables whitelist bypass and unauthorized withdrawal of funds.",
+    "severity": "medium",
+    "contract_name": "Vault",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-09"
+  },
+  {
+    "id": "448c98b6-cc2b-4fff-9a65-1b1329daa109",
+    "title": "[M-10] The withdrawal of Multi strategies vault could be DoSed while asset deposits remain unaffected",
+    "description": "Issue: MultiStrategyVault._undeploy(amount) calls MultiStrategy._deallocateAssets(amount). _deallocateAssets iterates the _strategies array, reads each strategy.totalAssets() into local currentAssets[i], sums totalAssets, computes fractAmount = (amount * currentAssets[i]) / totalAssets and then calls IStrategy(_strategies[i]).undeploy(fractAmount). Root cause: when currentAssets[i] == 0 this yields fractAmount == 0 but the code still calls undeploy(0). Several real strategies (e.g. StrategySupplyBase.undeploy(uint256) which reverts ZeroAmount(), and StrategyLeverage.undeploy(...) which reverts NoCollateralMarginToScale() when balances are zero) revert on undeploy(0). Exploit/impact: an attacker or misconfigured admin can add/register a strategy in _strategies that reports totalAssets() == 0 or otherwise has zero deployed assets but reverts on undeploy(0). That causes _deallocateAssets to revert and DoS the withdrawal flow (vault.withdraw -> MultiStrategyVault._undeploy -> _deallocateAssets), blocking withdrawals. Fixes: skip calling undeploy when fractAmount == 0 or skip strategies with currentAssets[i] == 0; handle totalAssets == 0 as a special case; or require/standardize strategy implementations to accept undeploy(0) as a no-op and/or validate/reject strategies on addStrategy.",
+    "severity": "medium",
+    "contract_name": "MultiStrategy",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-10"
+  },
+  {
+    "id": "72c40205-b3f6-42c1-a57e-81560d9f7be9",
+    "title": "[H-05] The implementation of pullTokensWithPermit poses a risk, allowing malicious actors to steal tokens",
+    "description": "An attacker can frontrun EIP‑2612 permit usage in router batch calls because the signed permit parameters (owner, spender, value, deadline, v, r, s) are visible in the mempool and the Router does not atomically consume/verify the permit. End‑to‑end: a user submits a Router.batch / Router.batchSwap / Router.multicall / Router.deposit call that includes token.permit(owner, spender=Router, value, deadline, v, r, s). The vulnerable functions/state are ERC20Permit.permit(owner, spender, value, deadline, v, r, s), the token contract's nonces[owner] and allowance[owner][spender], and ERC20.transferFrom(from, to, amount). A frontrunner observes the calldata, calls token.permit(...) first (consuming nonces[owner] / setting allowance[owner][spender]) and then immediately calls token.transferFrom(owner, attacker, value) or submits a malicious Router.batch that routes the newly approved tokens to the attacker. Because the Router assumes the permit cannot be replayed/front‑run and does not perform an atomic, single‑transaction verification+pull, attackers can reuse/consume the permit or steal the approved tokens.",
+    "severity": "high",
+    "contract_name": "VaultRouter",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-H-05"
+  },
+  {
+    "id": "c4edea89-64bc-4088-8869-ded87e430f85",
+    "title": "[M-12] Cannot withdraw tokens from all strategies in MultiStrategyVault when one third party is paused",
+    "description": "MultiStrategyVault can be permanently blocked if a third‑party Strategy starts reverting (e.g., a paused AAVE V3 pool) because the vault assumes all external IStrategy calls succeed. During withdrawals / rebalances the vault iterates _strategies and calls IStrategy.totalAssets() and IStrategy.undeploy(...). In _deallocateAssets(uint256 amount) it reads currentAssets[i] = IStrategy(_strategies[i]).totalAssets(), computes fractAmount = (amount * currentAssets[i]) / totalAssets, then calls IStrategy(_strategies[i]).undeploy(fractAmount). _rebalanceStrategies(...) likewise calls IStrategy(...).undeploy(uint256(-deltas[i])), removeStrategy(uint256 index) calls IStrategy(_strategies[index]).undeploy(strategyAssets), and withdraw() flows depend on these calls. Deposits use _weights[] and _allocateAssets (so setting a weight to 0 prevents new deployments) but withdrawals/deallocation use currentAssets/totalAssets, not weights. If a strategy's totalAssets() or undeploy(...) reverts, the vault's withdraw(), _deallocateAssets, _rebalanceStrategies and removeStrategy will revert for the whole vault, trapping user funds; there is no per‑strategy paused/exclude flag or force‑remove to recover. Mitigations: add a per‑strategy paused/exclude flag or treat paused strategies as inactive when computing deallocation targets; wrap external calls in try/catch or skip strategies whose totalAssets()/undeploy() would revert; and allow force‑removal/marking a strategy orphaned without calling undeploy.",
+    "severity": "medium",
+    "contract_name": "MultiStrategyVault",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-12"
+  },
+  {
+    "id": "3088cda6-f13b-42cc-884a-ede2d940a9e7",
+    "title": "[M-14] The StrategySupplyMorpho allow to use wrong token in _asset",
+    "description": "The strategy stores collateral in the state variable _asset but Morpho actually needs a different ERC20 called loanToken. During the strategy's supply flow (e.g., deposit(), invest(), enterPosition()) the strategy calls the Morpho market contract (morphoMarket) to supply funds; Morpho then invokes ERC20.transferFrom(loanToken, ...) to pull loanToken from the strategy. The strategy never executes ERC20.approve(loanToken, morphoMarket, amount), so ERC20.allowance(loanToken, morphoMarket) == 0 and transferFrom reverts/fails. End-to-end identifiers: _asset (strategy collateral), loanToken (token Morpho expects), morphoMarket (Morpho market contract), missing ERC20.approve/allowance and the resulting ERC20.transferFrom. Impact: if _asset != loanToken the strategy cannot open positions or supply funds (operations revert or fail), rendering the strategy unusable and risking locked funds.",
+    "severity": "medium",
+    "contract_name": "StrategySupplyMorpho",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-14"
+  },
+  {
+    "id": "e501a1cf-4133-4994-8b34-0baa398d2bfd",
+    "title": "[M-15] VaultRouter cannot be used for deposits when it reaches the maximum deposit limit",
+    "description": "VaultRouter forwards user deposits to Vault by calling Vault.deposit(amount) so msg.sender inside Vault is VaultRouter. Vault enforces a per-depositor cap using the state mapping deposits[msg.sender] and the uint maxDeposit, updating deposits[VaultRouter] and checking deposits[VaultRouter] <= maxDeposit on each deposit. End-to-end this means multiple users routing through VaultRouter all increment deposits[VaultRouter] until it hits maxDeposit, after which further Vault.deposit calls revert and VaultRouter can no longer deposit on behalf of users even though those users individually have not reached their own limits, causing a denial-of-service for routed deposits.",
+    "severity": "medium",
+    "contract_name": "VaultRouter",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-15"
+  },
+  {
+    "id": "565e3614-f29e-45cb-b2cb-55a2e0c9f625",
+    "title": "[H-01] Users may encounter losses on assets deposited through StrategySupplyERC4626",
+    "description": "In StrategySupplyERC4626 the internal hooks _deploy(), _undeploy() and _getBalance() return values denominated in vault 'shares' (variable: shares) instead of the equivalent underlying token amount (expected: assets/underlying). BakerFi Vaults call these StrategySupplyERC4626 functions to read deployed/undeployed balances and user asset amounts, so the vaults receive share counts where they expect underlying assets. End-to-end: BakerFi Vault -> calls StrategySupplyERC4626._getBalance() / _deploy() / _undeploy() -> receives value denominated in 'shares' (shares) not in underlying 'assets' (assets/underlying) -> vault accounting (deposits, withdrawals, performance and fee calculations) operates on the wrong unit, causing misreported balances, incorrect withdrawable amounts and potential financial loss or fee theft whenever a BakerFi Vault uses StrategySupplyERC4626.",
+    "severity": "high",
+    "contract_name": "StrategySupplyERC4626",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-H-01"
+  },
+  {
+    "id": "a8f65325-448a-4988-98de-e97dc6e0630c",
+    "title": "[H-07] Malicious actors can exploit user-approved allowances on VaultRouter to drain their ERC4626 tokens",
+    "description": "A user approves VaultRouter to spend their ERC4626/ERC20 shares by calling ERC4626/ERC20.approve(VaultRouter, amount). VaultRouter (contract name: VaultRouter) exposes a publicly callable execute() (function name: execute()) that uses the ERC20 allowance mapping and calls ERC20.transferFrom to move shares using the granted allowance but lacks access control on who can invoke it. End-to-end exploit: user sets an allowance in the ERC4626 token via approve(); any attacker then calls VaultRouter.execute(), which uses the ERC20 allowance (allowance mapping) and ERC20.transferFrom to drain the approving user’s shares to an attacker-controlled recipient because execute() is public and relies on msg.sender/context incorrectly. Related identifiers: VaultRouter, execute(), ERC4626/ERC20.approve(), ERC20.transferFrom(), ERC20 allowance mapping, msg.sender.",
+    "severity": "high",
+    "contract_name": "VaultRouter",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-H-07"
+  },
+  {
+    "id": "4511d1a9-9975-4e15-a2b6-e96b0fa4e347",
+    "title": "[M-07] Depositor can bypass the max deposit limit",
+    "description": "A deposit-cap bypass occurs when a contract (e.g., a Vault or Staking contract) implements a per-account cap but validates and updates different keys. Typical vulnerable function signatures: deposit(uint256 amount, address recipient) or depositFor(...). State variables involved: uint256 maxDeposit and a mapping(address => uint256) deposits (or depositedAmount). The bug is that the code checks deposits[msg.sender] < maxDeposit (or uses msg.sender in the validation) but then increments deposits[recipient] += amount (or credits depositedAmount[recipient]). Because validation uses msg.sender while the beneficiary key is recipient, an attacker can call deposit(amount, victim) (using token.transferFrom(msg.sender, address(this), amount) for ERC‑20) while sender’s deposits are under maxDeposit and thereby make deposits[victim] exceed maxDeposit or bypass caps by rotating senders. Exploit steps: 1) attacker calls deposit(amount, victim) from attacker account; 2) contract allows it because deposits[attacker] < maxDeposit; 3) contract increments deposits[victim] so victim’s recorded balance surpasses the intended cap. Fix: ensure the same address key is used for both validation and update (validate deposits[recipient] < maxDeposit before crediting deposits[recipient] or consistently use msg.sender for both), or remove the recipient parameter and only allow deposits credited to msg.sender when per‑depositor caps are required.",
+    "severity": "medium",
+    "contract_name": "Vault",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-07"
+  },
+  {
+    "id": "31241367-dd41-4815-aa88-dadda3f8be08",
+    "title": "[M-08] The dispatch function of the VaultRouter, does not work as intended, with PULL_TOKEN action",
+    "description": "Issue: VaultRouter.dispatch (called from MultiCommand.execute) mis-handles per-action input mappings: the per-action struct inputMapping.field actionToExecute can be set to the sentinel value PULL_TOKEN. During dispatch, actions are decoded right-to-left and dispatch treats inputMapping.actionToExecute as a command index into the command table instead of recognizing the sentinel. If actionToExecute == PULL_TOKEN, dispatch uses that value as an index, fails the validation and reverts with InvalidCommand(uint256 action), causing the entire MultiCommand.execute to revert. End-to-end: an attacker/caller crafts a MultiCommand.execute where an action's inputMapping.actionToExecute == PULL_TOKEN; VaultRouter.dispatch interprets that sentinel as a command index while decoding and throws InvalidCommand, producing a trivial Denial-of-Service/withdrawal-failure. Remediation: in VaultRouter.dispatch (or prior to calling dispatch), validate/forbid inputMapping.actionToExecute == PULL_TOKEN or special-case PULL_TOKEN so it is never treated as a command index.",
+    "severity": "medium",
+    "contract_name": "VaultRouter",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-08"
+  },
+  {
+    "id": "8bebc388-7eba-4310-9815-d9a158f0646b",
+    "title": "[M-13] The Vault Manager is unable to delete the last strategy from MultiStrategyVault",
+    "description": "In the VaultManager contract the VAULT_MANAGER_ROLE cannot remove the final strategy because the removal functions (e.g. removeStrategy(address _strategy) / revokeStrategy(...)) include a guard like require(strategies.length > 1) that prevents removal when only one strategy remains. The deletion path updates state variables address[] public strategies, mapping(address => bool) public isStrategy and a strategy count (e.g. uint256 strategyCount) but never allows the last entry to be removed: when strategies.length == 1 the require check reverts, so the function never reaches the code that clears isStrategy[_strategy], removes from the strategies array or decrements strategyCount. As a result, if the system is reduced to a single strategy (by normal operations or misconfiguration), a manager holding VAULT_MANAGER_ROLE cannot delete or replace that final strategy, leaving funds and vault behavior permanently tied to that strategy and preventing emergency migration or remediation.",
+    "severity": "medium",
+    "contract_name": "MultiStrategyVault",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-13"
+  },
+  {
+    "id": "aaade98d-4321-476d-8338-5029236386f8",
+    "title": "[H-02] Anyone can call StrategySupplyBase.harvest, allowing users to avoid paying performance fees on interest",
+    "description": "Issue: StrategySupplyBase.harvest (external) updates state variable _deployedAmount by computing balanceChange = int256(newBalance) - int256(_deployedAmount) and then setting _deployedAmount = newBalance. The vault fee flow calls _harvestAndMintFees -> _harvest -> _strategy.harvest() to obtain balanceChange and then mints protocol fees via _mint(feeReceiver, sharesToMint) where feeReceiver = getFeeReceiver(), performanceFee = getPerformanceFee(), currentPosition = _totalAssets(), feeInEth = uint256(balanceChange) * performanceFee and sharesToMint = feeInEth.mulDivUp(totalSupply(), currentPosition * PERCENTAGE_PRECISION). Vulnerability (end-to-end): because StrategySupplyBase.harvest is public/external, an attacker can call StrategySupplyBase.harvest to set _deployedAmount to newBalance before the administrator triggers vault.rebalance (which calls _harvestAndMintFees). When the admin later calls _harvestAndMintFees -> _harvest -> _strategy.harvest(), the strategy returns balanceChange == 0, so feeInEth == 0 and sharesToMint == 0 and no performance fees are minted. Impact: attackers can front-run or pre-call harvest to prevent protocol performance fee minting and capture excess interest. Exploit path: attacker calls StrategySupplyBase.harvest (updates _deployedAmount -> newBalance) -> admin calls vault.rebalance -> _harvestAndMintFees -> _harvest -> _strategy.harvest() returns 0 -> fee minting skipped. Mitigations: restrict StrategySupplyBase.harvest to vault/keeper/admin, make the state update internal or require authentication, decouple fee accounting from _deployedAmount by tracking a separate feeCheckpoint, or have the vault compute profit via a non-state-changing view and mint fees before the strategy updates _deployedAmount.",
+    "severity": "high",
+    "contract_name": "StrategySupplyBase",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-H-02"
+  },
+  {
+    "id": "bc3c7872-2ec6-4b5d-b22c-812b444e6061",
+    "title": "[H-03] _deployedAmount not updated on StrategySupplyBase.undeploy, preventing performance fees from being collected",
+    "description": "In StrategySupplyBase the undeploy function (StrategySupplyBase.undeploy) pulls assets back but does not update the state variable _deployedAmount. End-to-end: assets are deployed and interest accrues; a withdrawal triggers undeploy which returns funds but leaves _deployedAmount stale; later a rebalance (the rebalance path invoked after withdrawals — rebalance/withdraw flow) computes performance/profit using the stale _deployedAmount and therefore reports no or reduced gains. Consequence: the protocol cannot collect performance fees on interest that was actually earned. Affected identifiers: contract StrategySupplyBase, function undeploy (StrategySupplyBase.undeploy), state variable _deployedAmount, and the rebalance/withdraw flow used to calculate performance.",
+    "severity": "high",
+    "contract_name": "StrategySupplyBase",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-H-03"
+  },
+  {
+    "id": "e5bda6a1-e864-4b62-8584-ff30f00a3578",
+    "title": "[M-02] New strategy can not work due to insufficient allowance",
+    "description": "MultiStrategy exposes addStrategy() with no or insufficient access control and validation, allowing an attacker to register a malicious contract in the strategies[] array and (if present) write to strategyAllocations/allocations and increment totalAllocation/strategyCount without owner/governance/onlyOwner checks. End‑to‑end exploit: attacker calls MultiStrategy.addStrategy(...) -> strategies[] (and strategyAllocations/allocations, totalAllocation/strategyCount) are updated to include the attacker strategy -> subsequent vault operations (e.g., MultiStrategyVault.deposit(), and routines that call into strategies such as invest(), rebalance(), migrateToStrategy(), allocate()) iterate strategies[] and invoke strategy callbacks (invest/earn/harvest/withdraw) which execute attacker-controlled logic (forward funds, revert others, self-destruct) and drain the vault. In short: unprotected MultiStrategy.addStrategy() plus unguarded state variables strategies[], strategyAllocations/allocations, totalAllocation/strategyCount enables registration of a malicious strategy and full fund exfiltration via vault callbacks.",
+    "severity": "medium",
+    "contract_name": "MultiStrategyVault",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-02"
+  },
+  {
+    "id": "dc7a4e05-f737-4411-915f-6ee408eda2a8",
+    "title": "[H-04] There are multiple issues with the decimal conversions between the vault and the strategy",
+    "description": "Root cause: StrategyLeverage assumes 18 decimals everywhere and uses fixed 1e18 scaling in its conversion helpers instead of reading ERC20.decimals(), breaking support for tokens with decimals != 18. Internal helpers named _to18(), _from18(), convertTo18(), convertFrom18() (or similarly named) are applied to the protocol token stored in state variable want/token and to local variables like amount18, scaledAmount, wantAmount. Those conversions feed public functions deposit(), withdraw(), leverage(), _rebalance(), and harvest(), causing incorrect updates to share and position accounting state variables totalSupply/shares/balances (share accounting) and debt/reserveIn18/leverageFactor (position/debt accounting). End-to-end exploit: an attacker supplies a non-18-decimal token (e.g. 6 or 8 decimals) to deposit(); deposit() calls the hard-coded _to18()/convertTo18() and mints over- or under-valued shares and records wrong debt/reserveIn18; the attacker then calls withdraw(), which uses _from18()/convertFrom18() with the same wrong scale to withdraw more underlying than entitled, or manipulates leverage()/_rebalance() to create mismatched debt and drain funds. In short, fixed 1e18 normalization across conversion helpers, deposit/withdraw/leverage paths, and share/debt state enables incorrect accounting and potential theft when interacting with non-18-decimal tokens.",
+    "severity": "high",
+    "contract_name": "StrategyLeverage",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-H-04"
+  }
+]
