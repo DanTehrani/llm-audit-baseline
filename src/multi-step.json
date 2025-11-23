@@ -1,0 +1,20 @@
+[
+  {
+    "id": "5e164b10-a6ab-4954-bcfe-0169c64c6d00",
+    "title": "[M-02] Anyone can DOS handleReallocation over and over",
+    "description": "Li.Fi’s Executor contract is granted SWAP_CALLER_ROLE. The function handleReallocation is used inside the protocol to notify about user’s reallocation and can only be called by address that has SWAP_CALLER_ROLE. The intention of the protocol is to use the executor’s functions so that executor swaps assets and then calls handleReallocation inside NudgeCampaign / NudgePointsCampaign contract.",
+    "severity": "medium",
+    "contract_name": "NudgeCampaignFactory",
+    "project_name": "2025-03-nudgexyz",
+    "unique_key": "2025-03-nudgexyz-M-02"
+  },
+  {
+    "id": "6b5fe9d5-0935-4dd0-adc3-ae12e36393e4",
+    "title": "[M-01] Unauthorized reallocation in NudgeCampaign::handleReallocation and reward disruption vulnerability in NudgeCampaign::invalidateParticipations",
+    "description": "The NudgeCampaign::handleReallocation function allows any attacker to manipulate reward allocations through flash loans or repeated calls with real fund via Li.Fi’s executor. This can lead to reward depletion and disruption of legitimate user rewards even after invalidating the attacker",
+    "severity": "medium",
+    "contract_name": "NudgeCampaign",
+    "project_name": "2025-03-nudgexyz",
+    "unique_key": "2025-03-nudgexyz-M-01"
+  }
+]

@@ -1,0 +1,74 @@
+[
+  {
+    "id": "e1c858f3-ee39-4496-be3e-bda0428d7fe7",
+    "title": "[M-11] The calculation of assetsMax is incorrect.",
+    "description": "The _undeploy function computes a withdrawal cap (assetsMax) using _morpho.totalSupplyAssets and _morpho.totalSupplyShares read directly from the _morpho contract storage instead of using up-to-date totals that include accrued interest. Because interest in the underlying protocol accrues off-chain/storage between updates, the stored totalSupplyAssets/totalSupplyShares can be stale; using them causes assetsMax to be underestimated relative to the true post‑interest state. An attacker can call _undeploy (or any withdrawal flow that uses the same logic) at a timing/state mismatch to trigger transfers larger than the contract’s correct entitlement, withdrawing excess underlying and draining value from other users. Key identifiers: function _undeploy, variable assetsMax, contract instance _morpho, and state variables totalSupplyAssets and totalSupplyShares.",
+    "severity": "medium",
+    "contract_name": "StrategySupplyMorpho",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-11"
+  },
+  {
+    "id": "69892d16-25e3-4e4a-b3cd-b24c7e86df2d",
+    "title": "[M-05] Permit doesn’t work with DAI",
+    "description": "VaultRouter.pullTokensWithPermit blindly calls token.permit(msg.sender, address(this), amount, deadline, v, r, s) assuming the EIP‑2612 ABI. DAI, however, implements a different non‑standard permit: permit(address holder, address spender, uint256 nonce, uint256 expiry, bool allowed, uint8 v, bytes32 r, bytes32 s). Because the function selector, parameter order and semantics differ (EIP‑2612 expects amount+deadline; DAI expects nonce+expiry+allowed), invoking the EIP‑2612 signature against a DAI contract will either revert or not grant the intended allowance (the boolean 'allowed' and nonce/expiry are not handled). End‑to‑end: VaultRouter.pullTokensWithPermit -> token.permit(msg.sender, address(this), amount, deadline, v, r, s) (expects EIP‑2612) vs DAI.permit(holder, spender, nonce, expiry, allowed, v, r, s) -> approval not granted or call reverts -> VaultRouter.pullTokens (transferFrom) cannot pull tokens. Impact: users cannot use the permit convenience with DAI (UX break / DoS of permit flow) and calls may revert or silently fail. Mitigation: detect and support DAI's permit selector/signature or attempt both ABIs and/or fall back to on‑chain approve/transferFrom when permit fails.",
+    "severity": "medium",
+    "contract_name": "VaultRouter",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-05"
+  },
+  {
+    "id": "72c40205-b3f6-42c1-a57e-81560d9f7be9",
+    "title": "[H-05] The implementation of pullTokensWithPermit poses a risk, allowing malicious actors to steal tokens",
+    "description": "An attacker can frontrun EIP‑2612 permit usage in router batch calls because the signed permit parameters (owner, spender, value, deadline, v, r, s) are visible in the mempool and the Router does not atomically consume/verify the permit. End‑to‑end: a user submits a Router.batch / Router.batchSwap / Router.multicall / Router.deposit call that includes token.permit(owner, spender=Router, value, deadline, v, r, s). The vulnerable functions/state are ERC20Permit.permit(owner, spender, value, deadline, v, r, s), the token contract's nonces[owner] and allowance[owner][spender], and ERC20.transferFrom(from, to, amount). A frontrunner observes the calldata, calls token.permit(...) first (consuming nonces[owner] / setting allowance[owner][spender]) and then immediately calls token.transferFrom(owner, attacker, value) or submits a malicious Router.batch that routes the newly approved tokens to the attacker. Because the Router assumes the permit cannot be replayed/front‑run and does not perform an atomic, single‑transaction verification+pull, attackers can reuse/consume the permit or steal the approved tokens.",
+    "severity": "high",
+    "contract_name": "VaultRouter",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-H-05"
+  },
+  {
+    "id": "c4edea89-64bc-4088-8869-ded87e430f85",
+    "title": "[M-12] Cannot withdraw tokens from all strategies in MultiStrategyVault when one third party is paused",
+    "description": "MultiStrategyVault can be permanently blocked if a third‑party Strategy starts reverting (e.g., a paused AAVE V3 pool) because the vault assumes all external IStrategy calls succeed. During withdrawals / rebalances the vault iterates _strategies and calls IStrategy.totalAssets() and IStrategy.undeploy(...). In _deallocateAssets(uint256 amount) it reads currentAssets[i] = IStrategy(_strategies[i]).totalAssets(), computes fractAmount = (amount * currentAssets[i]) / totalAssets, then calls IStrategy(_strategies[i]).undeploy(fractAmount). _rebalanceStrategies(...) likewise calls IStrategy(...).undeploy(uint256(-deltas[i])), removeStrategy(uint256 index) calls IStrategy(_strategies[index]).undeploy(strategyAssets), and withdraw() flows depend on these calls. Deposits use _weights[] and _allocateAssets (so setting a weight to 0 prevents new deployments) but withdrawals/deallocation use currentAssets/totalAssets, not weights. If a strategy's totalAssets() or undeploy(...) reverts, the vault's withdraw(), _deallocateAssets, _rebalanceStrategies and removeStrategy will revert for the whole vault, trapping user funds; there is no per‑strategy paused/exclude flag or force‑remove to recover. Mitigations: add a per‑strategy paused/exclude flag or treat paused strategies as inactive when computing deallocation targets; wrap external calls in try/catch or skip strategies whose totalAssets()/undeploy() would revert; and allow force‑removal/marking a strategy orphaned without calling undeploy.",
+    "severity": "medium",
+    "contract_name": "MultiStrategyVault",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-12"
+  },
+  {
+    "id": "a6581554-f80f-4798-8e3d-c1f70b60ba2f",
+    "title": "[M-04] Sending tokens to a Strategy when totalSupply is 0 can permanently make the Vault unavailable",
+    "description": "A hostile actor can permanently disable a Vault by sending ERC20 tokens directly to its Strategy so that Strategy/Vault.totalAssets() > 0 while Vault.totalSupply == 0. The Vault’s deposit/mint share conversion (e.g. convertToShares() / previewDeposit()) computes shares using a proportional formula like shares = assets * totalSupply / totalAssets; with totalSupply == 0 this yields zero shares (or triggers an invalid/division case depending on implementation), causing deposit()/mint() to revert or to mint 0 shares. End-to-end: attacker calls ERC20.transfer(strategyAddress, amount) → subsequent Vault.deposit(...) / Vault.mint(...) call reads totalAssets() and totalSupply → convertToShares()/previewDeposit() compute shares = assets * totalSupply / totalAssets → computed shares == 0 or invalid → deposit/mint fails and totalSupply remains 0, leaving the Vault unusable. The same failure can occur during normal operation if small leftover tokens sit in Strategy so totalAssets() > 0 while totalSupply is effectively zero for new deposits.",
+    "severity": "medium",
+    "contract_name": "Vault",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-04"
+  },
+  {
+    "id": "565e3614-f29e-45cb-b2cb-55a2e0c9f625",
+    "title": "[H-01] Users may encounter losses on assets deposited through StrategySupplyERC4626",
+    "description": "In StrategySupplyERC4626 the internal hooks _deploy(), _undeploy() and _getBalance() return values denominated in vault 'shares' (variable: shares) instead of the equivalent underlying token amount (expected: assets/underlying). BakerFi Vaults call these StrategySupplyERC4626 functions to read deployed/undeployed balances and user asset amounts, so the vaults receive share counts where they expect underlying assets. End-to-end: BakerFi Vault -> calls StrategySupplyERC4626._getBalance() / _deploy() / _undeploy() -> receives value denominated in 'shares' (shares) not in underlying 'assets' (assets/underlying) -> vault accounting (deposits, withdrawals, performance and fee calculations) operates on the wrong unit, causing misreported balances, incorrect withdrawable amounts and potential financial loss or fee theft whenever a BakerFi Vault uses StrategySupplyERC4626.",
+    "severity": "high",
+    "contract_name": "StrategySupplyERC4626",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-H-01"
+  },
+  {
+    "id": "7bb7d482-c183-4db8-b7c6-db5d361a3a28",
+    "title": "[M-09] Non-whitelisted recipient can receive shares",
+    "description": "VaultBase enforces access via an onlyWhiteListed modifier that checks the _enabledAccounts whitelist, but its deposit(...) and mint(...) functions do NOT validate the receiver parameter. A whitelisted caller (e.g. the whitelisted VaultRouter contract) can call VaultBase.deposit or VaultBase.mint and pass a non‑whitelisted address as the receiver, causing vault shares to be minted/transferred to that recipient despite the recipient not being in _enabledAccounts. Because VaultRouter is whitelisted and can invoke VaultBase.withdraw and VaultBase.redeem on behalf of holders, the non‑whitelisted recipient can then use VaultRouter to call VaultBase.withdraw/redeem and redeem/withdraw the underlying assets. End‑to‑end: onlyWhiteListed + _enabledAccounts restrict callers, but unvalidated receiver in deposit/mint plus VaultRouter's whitelist rights enables whitelist bypass and unauthorized withdrawal of funds.",
+    "severity": "medium",
+    "contract_name": "Vault",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-09"
+  },
+  {
+    "id": "ef2af55f-c936-4b02-b687-91d230ae86b1",
+    "title": "[M-06] Even when the Vault contract is paused, the rebalance function is not paused",
+    "description": "When the Vault (e.g. Vault or StrategyVault) is paused via pause() / _pause() (state vars paused or _paused), user withdrawal functions withdraw() / withdrawAll() / redeem() are blocked but the rebalance/harvest path remains callable. Managers/keepers can still invoke rebalance() / performRebalance() / harvest() / accrueInterest() / _rebalance() on Strategy/Manager contracts. Those calls trigger interest accrual and performance fee computation that update state variables such as performanceFeeRate, feesAccrued / pendingFees / pendingPerformanceFee, totalAssets or totalInterest, and then call collectPerformanceFee() / claimFees() / chargePerformanceFee() to transfer fees to feeRecipient or a FeeCollector. Because the fee-collection path is not gated by paused / _paused / paused() checks, performance fees can be computed and withdrawn while users remain unable to exit, locking user funds and enabling protocol managers to extract fees during an emergency pause (fund-owner extraction risk).",
+    "severity": "medium",
+    "contract_name": "MultiStrategyVault",
+    "project_name": "2024-12-bakerfi",
+    "unique_key": "2024-12-bakerfi-M-06"
+  }
+]
